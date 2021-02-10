@@ -1,0 +1,77 @@
+parameters:
+- name: modulename
+- name: moduleversion
+- name: prerelease
+- name: repository
+  default: PSDemo
+
+steps:
+- pwsh: |
+    $Param = @{
+      Path          = "$(System.DefaultWorkingDirectory)\${{ parameters.modulename }}\${{ parameters.modulename }}.psd1"
+      ModuleVersion = "${{ parameters.moduleversion }}"
+      ReleaseNotes  = "$(Build.SourceVersionMessage)"
+      Prerelease    = "${{ parameters.prerelease }}" -replace "\W"
+    }
+    $Param | Out-Host # Just help
+    Update-ModuleManifest @Param
+  displayName: Update prerelease version into module manifest
+  condition: and(succeeded(), ne(variables['Build.SourceBranch'], 'refs/heads/master'))
+
+- pwsh: |
+    $Param = @{
+      Path          = "$(System.DefaultWorkingDirectory)\${{ parameters.modulename }}\${{ parameters.modulename }}.psd1"
+      ReleaseNotes  = "$(Build.SourceVersionMessage)"
+      ModuleVersion = "${{ parameters.moduleversion }}"
+    }
+    $Param | Out-Host # Just help
+    Update-ModuleManifest @Param
+  displayName: Update stable version into module manifest
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/master'))
+
+- pwsh: Test-ModuleManifest -Path .\${{ parameters.modulename }}\${{ parameters.modulename }}.psd1
+  displayName: Test module manifest
+
+- pwsh: |
+    if (-not (Get-Module -ListAvailable Pester | Where-Object Version -gt 5.0.0)) {
+      Install-Module -Name Pester -MinimumVersion 5.0.0 -Force
+    } else {
+      Get-Module -ListAvailable Pester
+    }
+  displayName: Load UnitTest and Mock framework for PowerShell
+
+- pwsh: Invoke-Pester -Path "$(System.DefaultWorkingDirectory)\${{ parameters.modulename }}" -CI
+  displayName: Run PowerShell UnitTest
+
+- task: PublishTestResults@2
+  inputs:
+    testResultsFormat: 'NUnit'
+    testResultsFiles: '$(System.DefaultWorkingDirectory)\testResults.xml'
+    failTaskOnFailedTests: true
+  displayName: Publish test results
+
+- task: Palmmedia.reportgenerator.reportgenerator-build-release-task.reportgenerator@4
+  inputs:
+    reports: '$(System.DefaultWorkingDirectory)\coverage.xml'
+    targetdir: '$(System.DefaultWorkingDirectory)\cobertura'
+    sourcedirs: '$(System.DefaultWorkingDirectory)\${{ parameters.modulename }}'
+    reporttypes: 'HtmlInline_AzurePipelines;Cobertura'
+  displayName: Generate code coverage report
+  condition: and(succeeded(), eq(variables['disable.coverage.autogenerate'],'true'))
+
+- task: PublishCodeCoverageResults@1
+  inputs:
+    summaryFileLocation: '$(System.DefaultWorkingDirectory)\coverage.xml'
+    reportDirectory: '$(System.DefaultWorkingDirectory)\cobertura'
+  displayName: Publish code coverage report
+  condition: and(succeeded(), eq(variables['disable.coverage.autogenerate'],'true'))
+
+- pwsh: |
+    $Param = @{
+      Path        = "$(System.DefaultWorkingDirectory)\${{ parameters.modulename }}"
+      Repository  = "${{ parameters.repository }}"
+      NuGetApiKey = "AzureArtifacts"
+    }
+    $Param | Out-Host # Just help
+    Publish-Module @Param -Force
+  displayName: Publish PowerShell module

@@ -1,0 +1,27 @@
+parameters:
+- name: configFilePath
+  default: './GitVersion.yml'
+
+steps:
+- task: gitversion/setup@0
+  inputs:
+    versionSpec: 5.x
+  displayName: Installing GitVersion Tool
+
+- pwsh: |
+    if (Test-Path "${{ parameters.configFilePath }}") {
+      Write-Host "File ${{ parameters.configFilePath }} exist, skip default settings"
+    } else {
+      $file = New-Item -Path ${{ parameters.configFilePath }} -ItemType File
+      Add-Content -Path $file -Value "mode: ContinuousDeployment"
+      Add-Content -Path $file -Value "continuous-delivery-fallback-tag: ''"
+      Write-Host "File ${{ parameters.configFilePath }} is created as default SEK settings"
+    }
+  displayName: Check settings file for GitVersion
+  
+- task: gitversion/execute@0
+  inputs:
+    useConfigFile: true
+    configFilePath: '${{ parameters.configFilePath }}'
+  name: gitversionexecute
+  displayName: Execute GitVersion tool with configuration in ${{ parameters.configFilePath }}

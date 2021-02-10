@@ -1,0 +1,43 @@
+parameters:
+- name: repository
+  default: PSDemo
+- name: repositorylocation
+  default: https://pkgs.dev.azure.com/henrikroos/_packaging/henrikroos/nuget/v2
+
+steps:
+- pwsh: |
+    if (-not (Get-PackageProvider -ListAvailable NuGet)) {
+      [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+      Install-PackageProvider -Name NuGet -Force
+    } else {
+      Get-PackageProvider NuGet
+    }
+  displayName: Package provider for NuGet
+
+- pwsh: |
+    if (-not (Get-Module -ListAvailable PowerShellGet | Where-Object Version -gt 1.0.0.1)) {
+      Install-Module -Name PowerShellGet -Force
+    } else {
+      Get-Module -ListAvailable PowerShellGet
+    }
+  displayName: Module for PowerShell artifact commands
+
+- pwsh: |
+    if (-not (Get-PSRepository | Where-Object Name -eq ${{ parameters.repository }})) {
+        $patToken = $env:SYSTEM_ACCESSTOKEN | ConvertTo-SecureString -AsPlainText -Force
+        $credsAzureDevops = New-Object System.Management.Automation.PSCredential("", $patToken)
+        $Param = @{
+          Name               = "${{ parameters.repository }}"
+          SourceLocation     = "${{ parameters.repositorylocation }}"
+          PublishLocation    = "${{ parameters.repositorylocation }}"
+          InstallationPolicy = "Trusted"
+          Credential         = $credsAzureDevops
+        }
+        $Param | Out-Host # Just help
+        Register-PSRepository @Param
+    } else {
+      Get-PSRepository ${{ parameters.repository }}
+    }
+  env:
+    SYSTEM_ACCESSTOKEN: $(System.AccessToken) # Agent create new token with "Project Collection Build Service Accounts" rights valid in 48 hours
+  displayName: PowerShell repository ${{ parameters.repository }}

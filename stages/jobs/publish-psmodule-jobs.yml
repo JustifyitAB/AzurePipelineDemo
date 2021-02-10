@@ -1,0 +1,29 @@
+parameters:
+- name: modulename
+
+jobs:
+- job: verifyingrepository
+  displayName: Verifying PowerShell repository
+  steps:
+    - template: steps/verifying-repository-steps.yml
+
+- job: gitversion
+  displayName: Conclude current version
+  steps:
+    - template: steps/gitversion-steps.yml
+
+- job: publishpsmodule
+  displayName: Pack and publish powershell module to PSRepository
+  dependsOn:
+    - verifyingrepository
+    - gitversion
+  variables:
+    semver: $[ dependencies.gitversion.outputs['gitversionexecute.GitVersion.MajorMinorPatch'] ]
+    prerelease: $[ dependencies.gitversion.outputs['gitversionexecute.GitVersion.NuGetPreReleaseTag'] ]
+    disable.coverage.autogenerate: 'true' # Use Palmmedia.reportgenerator for skipping [warning]Ignoring coverage report directory
+  steps:
+  - template: steps/publish-psmodule-steps.yml
+    parameters:
+      modulename: ${{ parameters.modulename }}
+      moduleversion: $(semver)
+      prerelease: $(prerelease)
